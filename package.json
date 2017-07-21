@@ -1,0 +1,25 @@
+{
+  "name": "dawa-autocomplete-guide-es6",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "dawa-autocomplete2": "^0.10.0"
+  },
+  "devDependencies": {
+    "webpack": "^3.3.0"
+  },
+  "scripts": {
+    "build": "webpack"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DanmarksAdresser/dawa-autocomplete-guide-ES6.git"
+  },
+  "author": "Finn Jordal",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/DanmarksAdresser/dawa-autocomplete-guide-ES6/issues"
+  },
+  "homepage": "https://github.com/DanmarksAdresser/dawa-autocomplete-guide-ES6#readme"
+}

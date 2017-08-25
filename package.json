@@ -1,10 +1,10 @@
 {
   "name": "dawa-autocomplete-guide-es6",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "index.js",
   "dependencies": {
-    "dawa-autocomplete2": "^0.10.0"
+    "dawa-autocomplete2": "latest"
   },
   "devDependencies": {
     "webpack": "^3.3.0"

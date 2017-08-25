@@ -1753,98 +1753,27 @@ var defaultOptions = {
   params: {},
   minLength: 2,
   debounce: 200,
-  renderCallback: function renderCallback(suggestions) {
+  renderCallback: function renderCallback() {
+    /*eslint no-console: 0*/
     console.error('No renderCallback supplied');
+  },
+  initialRenderCallback: function initialRenderCallback() {
+    /*eslint no-console: 0*/
+    console.error('No initialRenderCallback supplied');
   },
   type: 'adresse',
   baseUrl: 'https://dawa.aws.dk',
   adgangsadresserOnly: false,
   stormodtagerpostnumre: true,
+  supplerendebynavn: true,
   fuzzy: true,
-  fetchImpl: function fetchImpl(baseUrl, params) {
-    return fetch(baseUrl + '/autocomplete?' + formatParams(params), {
+  fetchImpl: function fetchImpl(url, params) {
+    return fetch(url + '?' + formatParams(params), {
       mode: 'cors'
     }).then(function (result) {
       return result.json();
     });
   }
-};
-
-// Beregner adressetekst hvor stormodtagerpostnummer anvendes.
-var formatAdresseMultiline = function formatAdresseMultiline(data) {
-  var adresse = data.vejnavn;
-  if (data.husnr) {
-    adresse += ' ' + data.husnr;
-  }
-  if (data.etage || data['dør']) {
-    adresse += ',';
-  }
-  if (data.etage) {
-    adresse += ' ' + data.etage + '.';
-  }
-  if (data['dør']) {
-    adresse += ' ' + data['dør'];
-  }
-  if (data.supplerendebynavn) {
-    adresse += '\n' + data.supplerendebynavn;
-  }
-  adresse += '\n' + data.postnr + ' ' + data.postnrnavn;
-  return adresse;
-};
-
-var formatAdresse = function formatAdresse(data, stormodtager) {
-  if (stormodtager) {
-    data = Object.assign({}, data, { postnr: data.stormodtagerpostnr, postnrnavn: data.stormodtagerpostnrnavn });
-  }
-  var text = formatAdresseMultiline(data);
-  return text;
-};
-
-var processResultsStormodtagere = function processResultsStormodtagere(q, result) {
-  return result.reduce(function (memo, row) {
-    if ((row.type === 'adgangsadresse' || row.type === 'adresse') && row.data.stormodtagerpostnr) {
-      // Vi har modtaget et stormodtagerpostnr. Her vil vi muligvis gerne vise stormodtagerpostnummeret
-      var stormodtagerEntry = Object.assign({}, row);
-      stormodtagerEntry.tekst = formatAdresse(row.data, true);
-      sotrmodtagerEntry.caretpos = stormodtagerEntry.tekst.length;
-      stormodtagerEntry.forslagstekst = formatAdresse(row.data, true);
-
-      var rows = [];
-      // Omvendt, hvis brugeren har indtastet den almindelige adresse eksakt, så er der ingen
-      // grund til at vise stormodtagerudgaven
-      if (q !== stormodtagerEntry.tekst) {
-        rows.push(row);
-      }
-
-      // Hvis brugeren har indtastet stormodtagerudgaven af adressen eksakt, så viser vi
-      // ikke den almindelige udgave
-      if (q !== row.tekst) {
-        rows.push(stormodtagerEntry);
-      }
-
-      // brugeren har indtastet stormodtagerpostnummeret, såvi viser stormodtager udgaven først.
-      if (rows.length > 1 && q.indexOf(row.data.stormodtagerpostnr) !== -1) {
-        rows = [rows[1], rows[0]];
-      }
-      memo = memo.concat(rows);
-    } else {
-      memo.push(row);
-    }
-    return memo;
-  }, []);
-};
-
-var processResults = function processResults(q, result, stormodtagereEnabled) {
-  result = result.map(function (row) {
-    if (row.type === 'adgangsadresse' || row.type === 'adresse') {
-      row.forslagstekst = formatAdresse(row.data, false);
-    }
-    return row;
-  });
-  if (stormodtagereEnabled) {
-    return processResultsStormodtagere(q, result);
-  }
-  return result;
 };
 
 var AutocompleteController = function () {
@@ -1861,13 +1790,14 @@ var AutocompleteController = function () {
 
   createClass(AutocompleteController, [{
     key: '_getAutocompleteResponse',
-    value: function _getAutocompleteResponse(text, caretpos, skipVejnavn, adgangsadresseid) {
-      var _this = this;
-
+    value: function _getAutocompleteResponse(text, caretpos, skipVejnavn, adgangsadresseid, supplerendebynavn, stormodtagerpostnumre) {
       var params = Object.assign({}, this.options.params, {
         q: text,
         type: this.options.type,
-        caretpos: caretpos
+        caretpos: caretpos,
+        supplerendebynavn: supplerendebynavn,
+        stormodtagerpostnumre: stormodtagerpostnumre,
+        multilinje: true
       });
       if (this.options.fuzzy) {
         params.fuzzy = '';
@@ -1879,9 +1809,7 @@ var AutocompleteController = function () {
         params.startfra = 'adgangsadresse';
       }
 
-      return this.options.fetchImpl(this.options.baseUrl, params).then(function (result) {
-        return processResults(text, result, _this.options.stormodtagerpostnumre);
-      });
+      return this.options.fetchImpl(this.options.baseUrl + '/autocomplete', params);
     }
   }, {
     key: '_scheduleRequest',
@@ -1896,7 +1824,7 @@ var AutocompleteController = function () {
   }, {
     key: '_executeRequest',
     value: function _executeRequest() {
-      var _this2 = this;
+      var _this = this;
 
       var request = this.state.currentRequest;
       var adgangsadresseid = null;
@@ -1919,13 +1847,32 @@ var AutocompleteController = function () {
         text = request.text;
         caretpos = request.caretpos;
       }
-      if (request.selected || request.text.length >= this.options.minLength) {
-        this._getAutocompleteResponse(text, caretpos, skipVejnavn, adgangsadresseid).then(function (result) {
-          return _this2._handleResponse(request, result);
+      if (request.selectedId) {
+        var params = { id: request.selectedId };
+        var path = '/' + (this.options.type === 'adgangsadresse' ? 'adgangsadresser' : 'adresser') + '/autocomplete';
+        return this.options.fetchImpl(this.options.baseUrl + '/' + path, params).then(function (result) {
+          return _this._handleResponse(request, result);
+        }, function (error) {
+          return _this._handleFailedRequest(request, error);
+        });
+      } else if (request.selected || request.text.length >= this.options.minLength) {
+        this._getAutocompleteResponse(text, caretpos, skipVejnavn, adgangsadresseid, this.options.supplerendebynavn, this.options.stormodtagerpostnumre).then(function (result) {
+          return _this._handleResponse(request, result);
+        }, function (error) {
+          return _this._handleFailedRequest(request, error);
         });
       } else {
         this._handleResponse(request, []);
       }
+    }
+  }, {
+    key: '_handleFailedRequest',
+    value: function _handleFailedRequest(request, error) {
+      console.error('DAWA request failed', error);
+      if (!this.state.pendingRequest) {
+        this._scheduleRequest(request);
+      }
+      this._requestCompleted();
     }
   }, {
     key: '_handleResponse',
@@ -1944,6 +1891,10 @@ var AutocompleteController = function () {
           }
         } else if (this.options.renderCallback) {
           this.options.renderCallback(result);
+        }
+      } else if (request.selectedId) {
+        if (result.length === 1) {
+          this.options.initialRenderCallback(result[0].tekst);
         }
       } else {
         if (this.options.renderCallback) {
@@ -1965,6 +1916,11 @@ var AutocompleteController = function () {
     key: 'setRenderCallback',
     value: function setRenderCallback(renderCallback) {
       this.options.renderCallback = renderCallback;
+    }
+  }, {
+    key: 'setInitialRenderCallback',
+    value: function setInitialRenderCallback(renderCallback) {
+      this.options.initialRenderCallback = renderCallback;
     }
   }, {
     key: 'setSelectCallback',
@@ -1989,6 +1945,14 @@ var AutocompleteController = function () {
       this._scheduleRequest(request);
     }
   }, {
+    key: 'selectInitial',
+    value: function selectInitial(id) {
+      var request = {
+        selectedId: id
+      };
+      this._scheduleRequest(request);
+    }
+  }, {
     key: 'destroy',
     value: function destroy() {}
   }]);
@@ -1999,7 +1963,7 @@ function dawaAutocomplete(inputElm, options) {
   options = Object.assign({ select: function select() {
       return null;
     } }, options);
-  var controllerOptions = ['baseUrl', 'minLength', 'params', 'fuzzy', 'stormodtagerpostnumre'].reduce(function (memo, optionName) {
+  var controllerOptions = ['baseUrl', 'minLength', 'params', 'fuzzy', 'stormodtagerpostnumre', 'supplerendebynavn'].reduce(function (memo, optionName) {
     if (options.hasOwnProperty(optionName)) {
       memo[optionName] = options[optionName];
     }
@@ -2028,6 +1992,17 @@ function dawaAutocomplete(inputElm, options) {
     ui.selectAndClose(selected.tekst);
     options.select(selected);
   });
+  controller.setInitialRenderCallback(function (text) {
+    return ui.selectAndClose(text);
+  });
+  if (options.addressId) {
+    controller.selectInitial(options.addressId);
+  }
+  return {
+    destroy: function destroy() {
+      return ui.destroy();
+    }
+  };
 }
 
 
